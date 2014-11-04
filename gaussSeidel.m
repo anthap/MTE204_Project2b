@@ -47,7 +47,7 @@ function X = gaussSeidel(K, F)
             end
             
         end
-        
+        %hooray
     end
     
     X = currentGuess;
