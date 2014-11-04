@@ -1,8 +1,14 @@
 function X = gaussSeidel(K, F)
 
+    %Get size of array (length of K, F, and X)
     N = length(K);
     
+    %'currentGuess' is the most up to date values for X - change it below
+    %to modify the initial guess
     currentGuess = zeros(N,1);
+    
+    %'relativeTolerance' is the tolerance value below which iterations for
+    %the Gauss-Seidel method are halted. 
     relativeTolerance = 0.01;
     toleranceFlag = false;
     
@@ -39,5 +45,5 @@ function X = gaussSeidel(K, F)
     end
     
     X = currentGuess;
-
+ 
 end
