@@ -482,7 +482,6 @@ end
 %It will return one matrix fully solved:  the "X" (displacement matrix)
 %                                         
 function [X, B] = solveMatrix(A,B,X,e)
-
     [m,n] = size(A);
     [o,p] = size(B);
     
@@ -505,9 +504,7 @@ function [X, B] = solveMatrix(A,B,X,e)
     % Kfe, Kf matrices to solve. Then at the end, it will combine Xe and Xf
     % matrices as well as the Be and Bf matrices to return the full X and B
     % matrices. 
-
     else
-        
         Ke = A([1:e],[1:e]);
         Kef = A([1:e],[e+1:n]);
         Kfe = A([e+1:n], [1:e]);
@@ -519,19 +516,17 @@ function [X, B] = solveMatrix(A,B,X,e)
         % Use LUD to solve for Xf
         C = Bf - (Kfe * Xe);
         
-        % In the form of Kf*Xf = C
-        [L, U, Cprime] = LUD(Kf, C);
+%         % In the form of Kf*Xf = C
+%         [L, U, Cprime] = LUD(Kf, C);
+%         % Now we have U*Xf = Cprime. We can solve for Xf using back
+%         % substitution
+%         Xf = solveWithBackSubstitution(U, Cprime);
         
-        % Now we have U*Xf = Cprime. We can solve for Xf using back
-        % substitution
-        Xf = solveWithBackSubstitution(U, Cprime);
-        
-        Be = (Ke * Xe) + (Kef * Xf); 
-
+        Xf = gaussSeidel(Kf, C);
+        Be = (Ke * Xe) + (Kef * Xf);
         B([1:e]) = Be;
         X([e+1:n]) = Xf;
     end
-
 end
 
 function [L, U, Cprime] = LUD(A, C)
@@ -545,11 +540,9 @@ function [L, U, Cprime] = LUD(A, C)
     
     %Outer loop iterates from i2j1 to the number of Rows
     %This is the number of times rows/column chunks in the L/U matrix must be filled in
-    for i = 1:Rows
-        
+    for i = 1:Rows 
         %This loop handles L matrix
         for j = i:Rows
-            
             %summationResult is the result of summing L(i,k)*U(k,j)
             summationResult = 0;
             k = 1;
@@ -557,62 +550,48 @@ function [L, U, Cprime] = LUD(A, C)
             %This while loop calculates the values in the summation in the
             %formula for each value of L
             while (k <= i - 1)
-                
                 summationResult = summationResult + (L(j,k)*U(k,i));
                 k = k + 1;
-                
             end           
             
             %calculate the value of L(j,i)
             L(j,i) = A(j,i) - summationResult; 
-            
         end
         
         %This loop handles U matrix
         for j = i:Columns
-            
             %summationResult is summation of L(i,k)*U(k,j)
             summationResult = 0;
             k = 1;
             
             %calculate summationResult
             while (k <= i - 1)
-                
                 summationResult = summationResult + (L(i,k)*U(k,j));
                 k = k + 1;
-                
             end
             
             %calculate value of U(i,j)
             U(i,j) = (A(i,j) - summationResult)/L(i,i);
-            
         end
-        
     end
     
     Cprime(1) = C(1)/L(1,1);
     
     for i = 2:Rows
-        
         summationResult = 0;
         k = 1;
         
         %using formula from a textbook (Applied Numerical Analysis,Gerald/Wheatly
-        
         while (k <= i - 1)
-            
             summationResult = summationResult + (L(i,k)*Cprime(k));
             k = k + 1;
-            
         end
         
         Cprime(i) = (C(i) - summationResult)/L(i,i); 
-        
     end
 end
 
 function Xf = solveWithBackSubstitution(U, Cprime)
-
     % create Xf which is the same size of 
     rows = size(Cprime,1);
     Xf = zeros(rows,1);
@@ -626,4 +605,48 @@ function Xf = solveWithBackSubstitution(U, Cprime)
     end
 
 end
+
+function X = gaussSeidel(K, F)
+    %In the form of F=kx
+    %Get size of array (length of K, F, and X)
+    N = length(K);
+    
+    %'currentGuess' is the most up to date values for X - change it below
+    %to modify the initial guess.
+    currentGuess = zeros(N,1);
+    
+    %'relativeTolerance' is the tolerance value below which iterations for
+    %the Gauss-Seidel method are halted. Change the tolerance below.
+    relativeTolerance = 0.01;
+    
+    %'toleranceFlag' is used to signal that iterations should be stopped. 
+    %When the flag is set, the program completes the current iteration and
+    %then exits. So long as one value of x[i] is not below the tolerance at
+    %an iteration, the program will continue.
+    toleranceFlag = false;
+    
+    while(toleranceFlag ~= true)
+        previousGuess = currentGuess;
+        
+        for i = 1:N            
+            toleranceFlag = true;
+            summation = 0;
+
+            for j = 1:N
+                if j ~= i
+                    summation = summation + (K(i,j)*currentGuess(j)); 
+                end
+            end
+            
+            currentGuess(i) = (F(i)-summation)/K(i,i);
+            error = abs(currentGuess(i)-previousGuess(i))/abs(previousGuess(i));
+                    
+            if error >= relativeTolerance
+                toleranceFlag = false; 
+            end 
+        end 
+    end
+    X = currentGuess;
+end
+
 
