@@ -1,6 +1,7 @@
 function main(timeStep, endTime, nodeToEvaluate)
-    lengthAcross = 354; %m
-    height = 6.41; %m
+%     starttime = cputime;
+    DOF = 2;
+    lengthAcross = 2; %m
     %Data in files follows format:
     %x,y
     x = 0:lengthAcross; % increments in approx 25 cm
@@ -14,12 +15,16 @@ function main(timeStep, endTime, nodeToEvaluate)
     %node1,node2
     sctrData = [transpose(1:(numNodes-1)) transpose(2:numNodes)];
 
-    %E,Area,Density,Dampening
+    %Initialize mechanical property constants
     %propsData = csvread(strcat('props', num2str(questionNum), '.txt'));
-    E = 2.255E10; %Pa  
+    E = 200E9; %Pa  
     area = 1.487E-3; %m^2
     density = 7394; % kg/m^3
-    dampening = 37.8; % 37.8 Nm/s
+    dampening = 0; % 37.8 Nm/s
+    momentOfInertia = 3.2E-7; % m^4
+    gamma = 1; % for implicit
+    beta = 1; % for implicit
+
     
     %Set End Nodes as fixed, all others to free
     nodeTypes = getNodeTypes(numNodes);
@@ -32,7 +37,8 @@ function main(timeStep, endTime, nodeToEvaluate)
     m = zeros(numElements,1);
     k = zeros(numElements,1);
     theta = zeros(numElements,1);
-    
+ 
+    % set unchanging element constants
     for i = 1:numElements
         node1 = sctrData(i,1);
         node2 = sctrData(i,2);
@@ -40,36 +46,133 @@ function main(timeStep, endTime, nodeToEvaluate)
         y1 = nodesData(node1,2);
         x2 = nodesData(node2,1);
         y2 = nodesData(node2,2);
-        theta(i) = atan2d(y2-y1,x2-x1);
+%         theta(i) = atan2d(y2-y1,x2-x1);
         length = sqrt(((x2-x1)^2)+((y2-y1)^2));
         k(i) = (area*E/length);
         c(i) = dampening;
         m(i) = length*area*density;
     end
-    
-    %Get data on applied forces based on the question
+
+    % Generated Gravitational forces to apply
     appliedForces = zeros((numNodes-2),3);
-    for i = 1:numNodes-1
+    for i = 1:numNodes-2
         appliedForces(i,1) = i+1;
         appliedForces(i,3) = (-9.81)*m(i); %N
     end
        
     %Create displacements and forces matrix; second column holds wether or not values
     %are known
-    U = calculateU(numNodes, nodeTypes);
+    UCurr = calculateU(numNodes, nodeTypes);
     F = calculateF(numNodes, nodeTypes, appliedForces);
-    disp(F);
     
-    %Create [M],[C],[Keff]  
+    UCurr = UCurr(:,1);
+    VCurr = zeros(size(UCurr));
+    aCurr = VCurr;
+    F = F(:,1);
+    
+    % Create [M]
     M = calculateM(numNodes, numElements, sctrData, m);
-    C = calculateK(numNodes, numElements, sctrData, c, theta);
-    K = calculateK(numNodes, numElements, sctrData, k, theta);
     
-%     if solveMethod == 1
-%         solveExplicit(questionNum,M,C,K,F,U,timeStep,endTime,nodeToEvaluate);
-%     elseif solveMethod == 2
-        solveImplicit(M,C,K,F,U,timeStep,endTime,nodeToEvaluate);
+            %size64 ensures the value passed to zeros() is an int
+        size64 = int64(endTime/timeStep + 1);
+        keepTrackU = zeros(size64, DOF + 1);
+%         keepTrackVel = zeros(size64, DOF + 1);
+%         keepTrackAcc = zeros(size64, DOF + 1);
+    nodeToEvaluateX = nodeToEvaluate*2-1;
+    nodeToEvaluateY = nodeToEvaluate*2;
+    disp(nodeToEvaluateX);
+    disp(nodeToEvaluateY);
+    
+    i = 1;
+    for (j = 0: timeStep: endTime)
+        disp(j);
+        % set changing element constants
+        for i2 = 1:numElements
+            node1 = sctrData(i2,1);
+            node2 = sctrData(i2,2);
+            x1 = nodesData(node1,1) + UCurr(node1*2-1);
+            y1 = nodesData(node1,2) + UCurr(node1*2);
+            x2 = nodesData(node2,1) + UCurr(node2*2-1);
+            y2 = nodesData(node2,2) + UCurr(node2*2);
+            theta(i2) = atan2(y2-y1,x2-x1);
+%             length = sqrt(((x2-x1)^2)+((y2-y1)^2));
+%             k(i) = (area*E/length);
+%             c(i) = dampening;
+%             m(i) = length*area*density;
+        end
+
+        %Create [C],[Keff]
+        C = calculateK(numNodes, numElements, sctrData, c, theta);
+        K = calculateK(numNodes, numElements, sctrData, k, theta);
+
+        [rows, cols] = size(K);
+
+%         [Forganize, Uorganize, Morganize, Corganize, Korganize, knowns, order] = organizeMatrix(F, U, M, C, K); 
+
+        Atilde = 2*M/(beta*(timeStep^2)) + K + 2*C*gamma/(beta*timeStep);
+        Btilde = 2*M/(beta*(timeStep^2)) + 2*C*gamma/(beta*timeStep);
+        Ctilde = 2*M/(beta*timeStep) + C*(2*gamma/beta - 1);
+        Dtilde = M*(1 - beta)/beta + timeStep*C*((gamma - 1) + gamma*(1 - beta)/beta);
+
+        %make matrices to record each iteration 
+%         keepTrackU(1, 2) = UCurr(nodeToEvaluateX);
+%         keepTrackU(1, 3) = UCurr(nodeToEvaluateY);
+    %     keepTrackVel(1, 2) = keepTrackU(1, 2)/timeStep;
+    %     keepTrackVel(1, 3) = keepTrackU(1, 3)/timeStep; 
+    %     keepTrackAcc(1, 2) = keepTrackVel(1,2)/timeStep; 
+    %     keepTrackAcc(1, 3) = keepTrackVel(1,3)/timeStep;
+
+%         if questionNum == 2
+%             Forganize(order(nodeToEvaluateX)) = j;
+%         elseif questionNum == 3
+%             %applying a sinusoid displacement to node 5 in the y-direction
+%             omega = 0.1;
+%             applyNode = 5;
+%             Uorganize(nodeToDisplaceY) = 50 * sin(omega*j);
+%         end
+
+        FAtNextTimeStep = F + Btilde*UCurr + Ctilde*VCurr + Dtilde*aCurr; 
+
+        UNext = solveMatrix(Atilde, FAtNextTimeStep, UCurr);
+        aNext = (2/(beta*timeStep))*((UNext - UCurr)/timeStep)-((2/(beta*timeStep))*VCurr)- (((1-beta)/beta)*aCurr);
+        VNext = VCurr + timeStep*((1-gamma)*aCurr + gamma*aNext);
+        
+        keepTrackU(i + 1, 1) = j;
+        keepTrackU(i + 1, 2) = UNext(nodeToEvaluateX);
+        keepTrackU(i + 1, 3) = UNext(nodeToEvaluateY);
+%         keepTrackVel(i + 1, 1) = j;
+%         keepTrackVel(i + 1, 2) = VorganizeNext(nodeToEvaluateX);
+%         keepTrackVel(i + 1, 3) = VorganizeNext(nodeToEvaluateY);
+%         keepTrackAcc(i + 1, 1) = j;
+%         keepTrackAcc(i + 1, 2) = aorganizeNext(nodeToEvaluateX);
+%         keepTrackAcc(i + 1, 3) = aorganizeNext(nodeToEvaluateY);
+        
+        UCurr = UNext; 
+        VCurr = VNext; 
+        aCurr = aNext; 
+        
+        i = i + 1;
+        disp(i);
+    end
+    
+    %Commented disp cuts off y displacement
+    %disp(keepTrackU(:,1:2));
+    %disp(keepTrackVel(:,1:2));
+    %disp(keepTrackAcc(:,1:2));
+    disp(keepTrackU);
+    plot(keepTrackU(:,1), keepTrackU(:,3));
+%     disp(keepTrackVel);
+%     disp(keepTrackAcc);
+
+%     % Reorganize to original Node Order
+%     Usolve = zeros(size(Uorganize,1),1);
+%     for i = 1:size(Uorganize,1)
+%         Usolve(order(i)) = UCurr(i);
 %     end
+
+    disp(UCurr);
+%     disp('IMPLICIT COMPUTATION TIME (s):');
+%     disp(cputime - starttime);
 end
 
 function nodeTypes = getNodeTypes(numNodes)
@@ -103,8 +206,8 @@ function K = calculateK(numNodes, numElements, sctrData, k, theta)
         node1 = sctrData(i,1);
         node2 = sctrData(i,2);
         
-        a = cosd(theta(i));
-        b = sind(theta(i));
+        a = cos(theta(i));
+        b = sin(theta(i));
 
         K(node1*2-1,node1*2-1) = K(node1*2-1,node1*2-1)+k(i)*(a^2);
         K(node1*2-1,node1*2) = K(node1*2-1,node1*2)+k(i)*(a*b);
@@ -186,183 +289,6 @@ function F = calculateF(numNodes, nodeTypes, appliedForces)
     end
 end
 
-function solveImplicit(M,C,K,F,U,timeStep,endTime,nodeToEvaluate);
-    starttime = cputime;
-
-    gamma = 3/2;
-    beta = 8/5;
-    DOF = 2; 
-    
-    [rows, cols] = size(K);
-    %size64 ensures the value passed to zeros() is an int
-    size64 = int64(endTime/timeStep + 1);
-    keepTrackU = zeros(size64, DOF + 1);
-    keepTrackVel = zeros(size64, DOF + 1);
-    keepTrackAcc = zeros(size64, DOF + 1);
-    
-    [Forganize, Uorganize, Morganize, Corganize, Korganize, knowns, order] = organizeMatrix(F, U, M, C, K); 
-    Uorganize = Uorganize(:,1);
-    Forganize = Forganize(:,1);
-    
-    Atilde = 2*Morganize/(beta*(timeStep^2)) + Korganize + 2*Corganize*gamma/(beta*timeStep);
-    Btilde = 2*Morganize/(beta*(timeStep^2)) + 2*Corganize*gamma/(beta*timeStep);
-    Ctilde = 2*Morganize/(beta*timeStep) + Corganize*(2*gamma/beta - 1);
-    Dtilde = Morganize*(1 - beta)/beta + timeStep*Corganize*((gamma - 1) + gamma*(1 - beta)/beta);
-
-   %find X position of node to apply force
-    for n = 1:rows
-        if order(n) == (nodeToEvaluate*2 - 1)
-            nodeToEvaluateX = order(n); 
-        end
-    end
-    
-    %find Y position of node to apply force
-    for n = 1:rows
-        if order(n) == nodeToEvaluate*2
-            nodeToEvaluateY = order(n); 
-        end
-    end
-    
-    %set initial U,V,a
-    UorganizeCurr = zeros(rows, 1); %THIS COULD be a matrix passed in if IC's aren't zero. 
-    VorganizeCurr = zeros(rows, 1);
-    aorganizeCurr = zeros(rows, 1); 
-    
-    %make matrices to record each iteration 
-    keepTrackU(1, 2) = UorganizeCurr(nodeToEvaluateX);
-    keepTrackU(1, 3) = UorganizeCurr(nodeToEvaluateY);
-    keepTrackVel(1, 2) = keepTrackU(1, 2)/timeStep;
-    keepTrackVel(1, 3) = keepTrackU(1, 3)/timeStep; 
-    keepTrackAcc(1, 2) = keepTrackVel(1,2)/timeStep; 
-    keepTrackAcc(1, 3) = keepTrackVel(1,3)/timeStep;
-    
-    %Find Y position of node to apply displacement (for Q3)
-    for n = 1:rows
-        if order(n) == 10
-            nodeToDisplaceY = n; 
-        end
-    end
-
-    i = 1;
-    for (j = 0: timeStep: endTime)
-        disp(j);
-%         if questionNum == 2
-%             Forganize(order(nodeToEvaluateX)) = j;
-%         elseif questionNum == 3
-%             %applying a sinusoid displacement to node 5 in the y-direction
-%             omega = 0.1;
-%             applyNode = 5;
-%             Uorganize(nodeToDisplaceY) = 50 * sin(omega*j);
-%         end
-
-        ForganizeAtNextTimeStep = Forganize + Btilde*UorganizeCurr + Ctilde*VorganizeCurr + Dtilde*aorganizeCurr; 
-        [UorganizeNext, ForganizeAtNextTimeStep] = solveMatrix(Atilde, ForganizeAtNextTimeStep, Uorganize, knowns);  
-        
-        aorganizeNext = (2/(beta*timeStep))*((UorganizeNext - UorganizeCurr)/timeStep)-((2/(beta*timeStep))*VorganizeCurr)- (((1-beta)/beta)*aorganizeCurr);
-        VorganizeNext = VorganizeCurr + timeStep*((1-gamma)*aorganizeCurr + gamma*aorganizeNext);
-        
-        keepTrackU(i + 1, 1) = j;
-        keepTrackU(i + 1, 2) = UorganizeNext(nodeToEvaluateX);
-        keepTrackU(i + 1, 3) = UorganizeNext(nodeToEvaluateY);
-        keepTrackVel(i + 1, 1) = j;
-        keepTrackVel(i + 1, 2) = VorganizeNext(nodeToEvaluateX);
-        keepTrackVel(i + 1, 3) = VorganizeNext(nodeToEvaluateY);
-        keepTrackAcc(i + 1, 1) = j;
-        keepTrackAcc(i + 1, 2) = aorganizeNext(nodeToEvaluateX);
-        keepTrackAcc(i + 1, 3) = aorganizeNext(nodeToEvaluateY);
-        
-        UorganizeCurr = UorganizeNext; 
-        VorganizeCurr = VorganizeNext; 
-        aorganizeCurr = aorganizeNext; 
-        
-        i = i + 1;
-    end
-    
-    %Commented disp cuts off y displacement
-    %disp(keepTrackU(:,1:2));
-    %disp(keepTrackVel(:,1:2));
-    %disp(keepTrackAcc(:,1:2));
-%     disp(keepTrackU);
-%     disp(keepTrackVel);
-%     disp(keepTrackAcc);
-
-    % Reorganize to original Node Order
-    Usolve = zeros(size(Uorganize,1),1);
-%     Fsolve = zeros(numNodes*2,1);
-    for i = 1:size(Uorganize,1)
-        Usolve(order(i)) = UorganizeCurr(i);
-%         Fsolve(orderF(i)) = ForganizeCurr(i);
-    end
-
-
-    disp(Usolve);
-    disp('IMPLICIT COMPUTATION TIME (s):');
-    disp(cputime - starttime);
-end
-
-function F = invert(M)
-    determinant = det(M);
-    [i, j] = size(M);
-    trans = zeros(j,i);
-    for a = 1:i
-        for b = 1:j
-            trans(a,b) = M(b,a);
-        end
-    end
-    F = (1/determinant)*trans;
-end
-
-function [Forganize, Uorganize, Morganize, Corganize, Korganize, knowns, order] = organizeMatrix(Fmatrix, Umatrix, Mmatrix, Cmatrix, Kmatrix)
-    knowns = 0; 
-    [row, col] = size(Kmatrix); 
-    for i = 1:row;
-        if Umatrix(i,2) == 1;
-            knowns = knowns + 1;
-        end
-    end        
-    
-    %assume the matrices are always the same height (A)
-    Uorganize = Umatrix;
-    Forganize = Fmatrix;
-    Morganize = Mmatrix;
-    Corganize = Cmatrix;
-    Korganize = Kmatrix;
-    order = transpose(1:row);
-    for i = 1:row
-        if Forganize(i,2) == 1
-            j = i + 1;
-            while j <= row
-                if Forganize(j,2) == 0;
-                    Forganize([i j],:) = Forganize([j i],:);
-                    Morganize([i j],:) = Morganize([j i],:);
-                    Corganize([i j],:) = Corganize([j i],:);
-                    Korganize([i j],:) = Korganize([j i],:);
-                    order([i j],:) = order([j i],:);
-                    break
-                end
-                j = j + 1;
-            end
-            
-        end
-    end
-    
-    for i = 1:row
-        if Uorganize(i,2) == 0;
-            j = i+1;
-            while j <= row 
-                if Uorganize(j,2) == 1;
-                    Uorganize([i j],:) = Uorganize([j i],:);
-                    Morganize(:,[i j]) = Morganize(:,[j i]);
-                    Corganize(:,[i j]) = Corganize(:,[j i]);
-                    Korganize(:,[i j]) = Korganize(:,[j i]);
-                    break
-                end
-                j = j + 1;
-            end
-        end            
-    end
-end
-
 %This function solves the matrix once it has been rearranged.
 %
 %This function takes 4 paramenters: -the "A", or global stiffness matrix   
@@ -370,53 +296,38 @@ end
 %                                   -the "B", or force matrix 
 %                                   
 %It will return one matrix fully solved:  the "X" (displacement matrix)
-%                                         
-function [X, B] = solveMatrix(A,B,X,e)
-    [m,n] = size(A);
-    [o,p] = size(B);
+%                                         AX = B
+function X = solveMatrix(A,B,X)
     
-    %error handling in case the dimensions given aren't right:
-    if m~=n
-        X = false; 
-    end
-    i = 1;
-   
-    if p ~= 1 && o~=n
-        B = false; 
-    end
+% !!! NEED TO EXPLAIN IN POWERPOINT WHATS GOING ON HERE
 
-    %if it is not a mixed solution, Find the "X" matrix or "B" matrix
-    %accordingly. Returns both of the matrices. 
-    if e == n
-        B = A*X;
-        
+    [rows,cols] = size(A);
+
     % if it is a mixed solution, then split up the "A" matrix into Ke, Kef,
     % Kfe, Kf matrices to solve. Then at the end, it will combine Xe and Xf
     % matrices as well as the Be and Bf matrices to return the full X and B
     % matrices. 
-    else
-        Ke = A([1:e],[1:e]);
-        Kef = A([1:e],[e+1:n]);
-        Kfe = A([e+1:n], [1:e]);
-        Kf = A([e+1:n], [e+1:n]);
+    Ke = A([3:rows-2],[3:cols-2]);
+    Kef = [A([3:rows-2],[1:2]) A([3:rows-2],[cols-1:cols])];
+%     Kfe = A([e+1:n], [1:e]);
+%     Kf = A([e+1:n], [e+1:n]);
 
-        Xe = X([1:e],1);
-        Bf = B([e+1:n], 1);
+    Xe = [X([1:2],1); X([rows-1:rows],1)];
+    Bf = B([3:rows-2], 1);
 
-        % Use LUD to solve for Xf
-        C = Bf - (Kfe * Xe);
-        
-%         % In the form of Kf*Xf = C
-%         [L, U, Cprime] = LUD(Kf, C);
-%         % Now we have U*Xf = Cprime. We can solve for Xf using back
-%         % substitution
-%         Xf = solveWithBackSubstitution(U, Cprime);
-        
-        Xf = gaussSeidel(Kf, C);
-        Be = (Ke * Xe) + (Kef * Xf);
-        B([1:e]) = Be;
-        X([e+1:n]) = Xf;
-    end
+    % Use LUD to solve for Xf
+    C = Bf - (Kef * Xe);
+
+% %         % In the form of Kf*Xf = C
+         [L, U, Cprime] = LUD(Ke, C);
+% %         % Now we have U*Xf = Cprime. We can solve for Xf using back
+% %         % substitution
+         Xf = solveWithBackSubstitution(U, Cprime);
+
+%     Xf = gaussSeidel(Ke, C);
+%     Be = (Ke * Xe) + (Kef * Xf);
+%     B([1:e]) = Be;
+    X([3:rows-2]) = Xf;
 end
 
 function [L, U, Cprime] = LUD(A, C)
