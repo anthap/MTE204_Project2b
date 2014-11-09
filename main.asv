@@ -1,7 +1,7 @@
 function main(timeStep, endTime, nodeToEvaluate)
 %     starttime = cputime;
     DOF = 2;
-    lengthAcross = 2; %m
+    lengthAcross = 10; %m
     %Data in files follows format:
     %x,y
     x = 0:lengthAcross; % increments in approx 25 cm
@@ -20,10 +20,10 @@ function main(timeStep, endTime, nodeToEvaluate)
     E = 200E9; %Pa  
     area = 1.487E-3; %m^2
     density = 7394; % kg/m^3
-    dampening = 0; % 37.8 Nm/s
+    dampening = 37.8; % 37.8 Nm/s
     momentOfInertia = 3.2E-7; % m^4
-    gamma = 1; % for implicit
-    beta = 1; % for implicit
+    gamma = 3/2; % for implicit
+    beta = 8/5; % for implicit
 
     
     %Set End Nodes as fixed, all others to free
@@ -152,14 +152,13 @@ function main(timeStep, endTime, nodeToEvaluate)
         aCurr = aNext; 
         
         i = i + 1;
-        disp(i);
     end
     
     %Commented disp cuts off y displacement
     %disp(keepTrackU(:,1:2));
     %disp(keepTrackVel(:,1:2));
     %disp(keepTrackAcc(:,1:2));
-    disp(keepTrackU);
+%     disp(keepTrackU);
     plot(keepTrackU(:,1), keepTrackU(:,3));
 %     disp(keepTrackVel);
 %     disp(keepTrackAcc);
@@ -170,9 +169,17 @@ function main(timeStep, endTime, nodeToEvaluate)
 %         Usolve(order(i)) = UCurr(i);
 %     end
 
-    disp(UCurr);
+%     disp(UCurr);
 %     disp('IMPLICIT COMPUTATION TIME (s):');
 %     disp(cputime - starttime);
+    finalx = zeros(numNodes);
+    finaly = zeros(numNodes);
+    for i = 1:numNodes
+        finalx(i) = UCurr(i*2-1);
+        finaly(i) = UCurr(i*2);
+    end
+    
+    postprocesser(finalx,finaly,sctrData)
 end
 
 function nodeTypes = getNodeTypes(numNodes)
@@ -318,13 +325,13 @@ function X = solveMatrix(A,B,X)
     % Use LUD to solve for Xf
     C = Bf - (Kef * Xe);
 
-% %         % In the form of Kf*Xf = C
-         [L, U, Cprime] = LUD(Ke, C);
+% %          % In the form of Kf*Xf = C
+%          [L, U, Cprime] = LUD(Ke, C);
 % %         % Now we have U*Xf = Cprime. We can solve for Xf using back
-% %         % substitution
-         Xf = solveWithBackSubstitution(U, Cprime);
+% %          % substitution
+%          Xf = solveWithBackSubstitution(U, Cprime);
 
-%     Xf = gaussSeidel(Ke, C);
+    Xf = gaussSeidel(Ke, C);
 %     Be = (Ke * Xe) + (Kef * Xf);
 %     B([1:e]) = Be;
     X([3:rows-2]) = Xf;

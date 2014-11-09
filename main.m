@@ -1,7 +1,7 @@
 function main(timeStep, endTime, nodeToEvaluate)
 %     starttime = cputime;
     DOF = 2;
-    lengthAcross = 4; %m
+    lengthAcross = 8; %m
     %Data in files follows format:
     %x,y
     x = 0:lengthAcross; % increments in approx 25 cm
@@ -152,7 +152,6 @@ function main(timeStep, endTime, nodeToEvaluate)
         aCurr = aNext; 
         
         i = i + 1;
-        disp(i);
     end
     
     %Commented disp cuts off y displacement
@@ -173,6 +172,11 @@ function main(timeStep, endTime, nodeToEvaluate)
 %     disp(UCurr);
 %     disp('IMPLICIT COMPUTATION TIME (s):');
 %     disp(cputime - starttime);
+    disp(nodesData(:,1));
+    disp(nodesData(:,2));
+    sctrData = [transpose(sctrData(:,1)) ; transpose(sctrData(:,2))];
+    disp(sctrData);
+    postprocesser(nodesData(:,1),nodesData(:,2),sctrData,UCurr);
 end
 
 function nodeTypes = getNodeTypes(numNodes)
