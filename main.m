@@ -1,17 +1,17 @@
-function main(timeStep, endTime, nodeToEvaluate)
-%     starttime = cputime;
+function main(timeStep, endTime)
+    starttime = tic;
     DOF = 2;
-    lengthAcross = 8; %m
+    lengthAcross = 354; %m
     %Data in files follows format:
     %x,y
-    x = 0:lengthAcross; % increments in approx 25 cm
+    x = 0:lengthAcross/512:lengthAcross; % increments in approx 25 cm
     y = x.*0;
 %     y = x.*(x-lengthAcross)./4876.8;
     nodesData = [transpose(x) transpose(y)];
-
+    
     %Retrieve number of nodes
     numNodes = size(nodesData,1);
-
+    nodeToEvaluate = (numNodes-1)/2;
     %node1,node2
     sctrData = [transpose(1:(numNodes-1)) transpose(2:numNodes)];
 
@@ -62,10 +62,11 @@ function main(timeStep, endTime, nodeToEvaluate)
        
     %Create displacements and forces matrix; second column holds wether or not values
     %are known
-    UCurr = calculateU(numNodes, nodeTypes);
+    %UCurr = calculateU(numNodes, nodeTypes);
+    UCurr = csvread('new.csv');
     F = calculateF(numNodes, nodeTypes, appliedForces);
     
-    UCurr = UCurr(:,1);
+    %UCurr = UCurr(:,1);
     VCurr = zeros(size(UCurr));
     aCurr = VCurr;
     F = F(:,1);
@@ -95,6 +96,7 @@ function main(timeStep, endTime, nodeToEvaluate)
             x2 = nodesData(node2,1) + UCurr(node2*2-1);
             y2 = nodesData(node2,2) + UCurr(node2*2);
             theta(i2) = atan2(y2-y1,x2-x1);
+            %F = recalculateForce(F, i2, j, timeStep);
 %             length = sqrt(((x2-x1)^2)+((y2-y1)^2));
 %             k(i) = (area*E/length);
 %             c(i) = dampening;
@@ -169,18 +171,20 @@ function main(timeStep, endTime, nodeToEvaluate)
 %         Usolve(order(i)) = UCurr(i);
 %     end
 
-%     disp(UCurr);
-%     disp('IMPLICIT COMPUTATION TIME (s):');
-%     disp(cputime - starttime);
+    %     disp(UCurr);
     disp(nodesData(:,1));
     disp(nodesData(:,2));
     sctrData = [transpose(sctrData(:,1)) ; transpose(sctrData(:,2))];
     disp(sctrData);
     postprocesser(nodesData(:,1),nodesData(:,2),sctrData,UCurr);
+
+    csvwrite('old.csv', UCurr);
+    disp('IMPLICIT COMPUTATION TIME (s):');
+    disp(toc(starttime));
 end
 
 function nodeTypes = getNodeTypes(numNodes)
-    % returns an array containing data for each node type for the system
+    % returns an array contaiNevermind ning data for each node type for the system
     % 1 - free, 2 - fixed, 3 - roller in x, 4 - roller in y
     nodeTypes = zeros(numNodes,1) + 1;
     nodeTypes(1) = 2;
@@ -416,6 +420,10 @@ function X = gaussSeidel(K, F)
     %Get size of array (length of K, F, and X)
     N = length(K);
     
+    %Use gpuArray
+    %K = gpuArray(Kcpu);
+    %F = gpuArray(Fcpu);
+    
     %'currentGuess' is the most up to date values for X - change it below
     %to modify the initial guess.
     currentGuess = zeros(N,1);
@@ -451,5 +459,3 @@ function X = gaussSeidel(K, F)
     end
     X = currentGuess;
 end
-
-
