@@ -65,7 +65,7 @@ function main(timeStep, endTime)
     %UCurr = calculateU(numNodes, nodeTypes);
     UCurr = csvread('new.csv');
     F = calculateF(numNodes, nodeTypes, appliedForces);
-    
+    Foriginal = F;
     %UCurr = UCurr(:,1);
     VCurr = zeros(size(UCurr));
     aCurr = VCurr;
@@ -96,6 +96,7 @@ function main(timeStep, endTime)
             x2 = nodesData(node2,1) + UCurr(node2*2-1);
             y2 = nodesData(node2,2) + UCurr(node2*2);
             theta(i2) = atan2(y2-y1,x2-x1);
+            F = NikWalks(Foriginal, j, timeStep);
             %F = recalculateForce(F, i2, j, timeStep);
 %             length = sqrt(((x2-x1)^2)+((y2-y1)^2));
 %             k(i) = (area*E/length);
